@@ -1,6 +1,7 @@
-from desw import CFG, models, ses, logger
+from desw import CFG, ses, logger
+from sqlalchemy_models import wallet as wm
 
-hwb = models.HWBalance(0, 0, 'BTC', 'bitcoin')
+hwb = wm.HWBalance(0, 0, 'BTC', 'bitcoin')
 ses.add(hwb)
 try:
     ses.commit()
