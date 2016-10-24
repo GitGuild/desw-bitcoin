@@ -9,6 +9,10 @@ walletnotify and blocknotify.
 import argparse
 import json
 import sys
+
+from ledger import Amount
+
+import datetime
 from pycoin.key.validate import is_address_valid
 from desw import CFG, ses, logger, process_credit, confirm_send
 from sqlalchemy_models import wallet as wm
@@ -68,7 +72,7 @@ def send_to_address(address, amount):
     :rtype: str
     """
     client = create_client()
-    txid = str(client.sendtoaddress(address, amount))
+    txid = str(client.sendtoaddress(address, amount.to_double()))
     adjust_hwbalance(available=-amount, total=-amount)
     return txid
 
@@ -81,7 +85,7 @@ def get_balance():
 
     :rtype: dict
     """
-    hwb = ses.query(wm.HWBalance).filter(wm.HWBalance.network == NETWORK.lower()).order_by(wm.HWBalance.time.desc()).first()
+    hwb = ses.query(wm.HWBalance).filter(wm.HWBalance.network == NETWORK).order_by(wm.HWBalance.time.desc()).first()
     return {'total': hwb.total, 'available': hwb.available}
 
 
@@ -104,7 +108,7 @@ def process_receive(txid, details, confirmed=False):
     if not addy:
         logger.warning("address not known. returning.")
         return
-    amount = details['amount']
+    amount = Amount("%s %s" % (details['amount'], CURRENCIES[0]))
     logger.info("crediting txid %s" % txid)
     process_credit(amount=amount, address=details['address'],
                    currency=CURRENCIES[0], network=NETWORK, transaction_state=transaction_state,
@@ -116,12 +120,15 @@ def process_receive(txid, details, confirmed=False):
 def adjust_hwbalance(available=None, total=None):
     if available is None and total is None:
         return
-    hwb = ses.query(wm.HWBalance).filter(wm.HWBalance.network == NETWORK.lower()).order_by(wm.HWBalance.time.desc()).first()
-    if available is not None:
-        hwb.available += available
-    if total is not None:
-        hwb.total += total
-    ses.add(hwb)
+    hwb = ses.query(wm.HWBalance).filter(wm.HWBalance.network == NETWORK).order_by(wm.HWBalance.time.desc()).first()
+    if available is None:
+        available = Amount("0 %s" % CURRENCIES[0])
+    if total is None:
+        total = Amount("0 %s" % CURRENCIES[0])
+    available += hwb.available
+    total += hwb.total
+    new_hwb = wm.HWBalance(available, total, CURRENCIES[0], NETWORK)
+    ses.add(new_hwb)
     try:
         ses.commit()
     except Exception as e:
@@ -180,9 +187,9 @@ def main(sys_args=sys.argv[1:]):
             ses.flush()
 
         # update balances
-        total = client.getbalance("*", 0)
-        avail = info['balance']
-        hwb = wm.HWBalance(avail, total, CURRENCIES[0], NETWORK.lower())
+        total = Amount("%s %s" % (client.getbalance("*", 0), CURRENCIES[0]))
+        avail = Amount("%s %s" % (info['balance'], CURRENCIES[0]))
+        hwb = wm.HWBalance(avail, total, CURRENCIES[0], NETWORK)
         ses.add(hwb)
         try:
             ses.commit()
