@@ -8,18 +8,19 @@ classifiers = [
 
 setup(
     name='DeSW-Bitcoin',
-    version='0.0.1',
+    version='0.0.2',
     py_modules=['desw_bitcoin'],
-    url='https://bitbucket.org/deginner/desw-bitcoin',
+    url='https://github.com/WalletGuild/desw-bitcoin',
     license='MIT',
     classifiers=classifiers,
-    author='deginner',
-    author_email='support@deginner.com',
+    author='WalletGuild',
+    author_email='support@gitguild.com',
     description='Bitcoin plugin for the desw wallet platform.',
     setup_requires=['pytest-runner'],
     install_requires=[
         'sqlalchemy>=1.0.9',
-        'desw>=0.0.2',
+        'sqlalchemy-models>=0.0.6',
+        'desw>=0.0.3',
         'python-bitcoinrpc>=0.3',
         'pycoin>=0.62'
     ],
