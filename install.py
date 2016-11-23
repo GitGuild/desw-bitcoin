@@ -1,4 +1,4 @@
-from desw import CFG, ses, logger
+from desw import ses
 from sqlalchemy_models import wallet as wm
 
 hwb = wm.HWBalance(0, 0, 'BTC', 'bitcoin')
@@ -8,4 +8,3 @@ try:
 except Exception as ie:
     ses.rollback()
     ses.flush()
-

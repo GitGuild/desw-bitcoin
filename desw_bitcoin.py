@@ -13,16 +13,17 @@ import sys
 from ledger import Amount
 
 import datetime
+
+from desw.plugin import confirm_credit
 from pycoin.key.validate import is_address_valid
-from desw import CFG, ses, logger, process_credit, confirm_send
+from desw import CFG, ses, logger, process_credit, confirm_send, adjust_hw_balance
 from sqlalchemy_models import wallet as wm
 
 from bitcoinrpc.authproxy import AuthServiceProxy
 NETCODES = ['BTC', 'XTN']
-NETWORK = 'Bitcoin'
+NETWORK = 'bitcoin'
 CURRENCIES = json.loads(CFG.get(NETWORK.lower(), 'CURRENCIES'))
 CONFS = int(CFG.get(NETWORK.lower(), 'CONFS'))
-#FEE = int(CFG.get(NETWORK.lower(), 'FEE'))
 
 
 def create_client():
@@ -73,7 +74,7 @@ def send_to_address(address, amount):
     """
     client = create_client()
     txid = str(client.sendtoaddress(address, amount.to_double()))
-    adjust_hwbalance(available=-amount, total=-amount)
+    adjust_hw_balance(CURRENCIES[0], NETWORK, available=-amount, total=-amount)
     return txid
 
 
@@ -108,33 +109,13 @@ def process_receive(txid, details, confirmed=False):
     if not addy:
         logger.warning("address not known. returning.")
         return
-    amount = Amount("%s %s" % (details['amount'], CURRENCIES[0]))
+    amount = Amount("%s %s" % (float(details['amount']), CURRENCIES[0]))
     logger.info("crediting txid %s" % txid)
     process_credit(amount=amount, address=details['address'],
                    currency=CURRENCIES[0], network=NETWORK, transaction_state=transaction_state,
                    reference='tx received', ref_id=txid,
                    user_id=addy.user_id)
-    adjust_hwbalance(available=None, total=amount)
-
-
-def adjust_hwbalance(available=None, total=None):
-    if available is None and total is None:
-        return
-    hwb = ses.query(wm.HWBalance).filter(wm.HWBalance.network == NETWORK).order_by(wm.HWBalance.time.desc()).first()
-    if available is None:
-        available = Amount("0 %s" % CURRENCIES[0])
-    if total is None:
-        total = Amount("0 %s" % CURRENCIES[0])
-    available += hwb.available
-    total += hwb.total
-    new_hwb = wm.HWBalance(available, total, CURRENCIES[0], NETWORK)
-    ses.add(new_hwb)
-    try:
-        ses.commit()
-    except Exception as e:
-        logger.exception(e)
-        ses.rollback()
-        ses.flush()
+    adjust_hw_balance(CURRENCIES[0], NETWORK, available=None, total=amount)
 
 
 lastblock = 0
@@ -158,10 +139,16 @@ def main(sys_args=sys.argv[1:]):
         confirmed = txd['confirmations'] >= CONFS
         for p, put in enumerate(txd['details']):
             if put['category'] == 'send':
-                confirm_send(put['address'], put['amount'],
-                             ref_id="%s:%s" % (txid, p))
+                try:
+                    confirm_send(put['address'], put['amount'],
+                                 ref_id=txid)
+                except ValueError as ve:
+                    logger.info(str(ve))
             elif put['category'] == 'receive':
-                process_receive("%s:%s" % (txid, p), put, confirmed)
+                try:
+                    process_receive(txid, put, confirmed)
+                except ValueError as ve:
+                    logger.info(str(ve))
 
     elif typ == 'block':
         info = client.getinfo()
@@ -175,10 +162,11 @@ def main(sys_args=sys.argv[1:]):
             txid = cred.ref_id.split(':')[0] or cred.ref_id
             txd = client.gettransaction(txid)
             if txd['confirmations'] >= CONFS:
-                cred.transaction_state = 'complete'
-                for p, put in enumerate(txd['details']):
-                    cred.ref_id = "%s:%s" % (txd['txid'], p)
-                ses.add(cred)
+                confirm_credit(credit=cred, txid=txd['txid'], session=ses)
+                # cred.transaction_state = 'complete'
+                # for p, put in enumerate(txd['details']):
+                #     cred.ref_id = "%s:%s" % (txd['txid'], p)
+                # ses.add(cred)
         try:
             ses.commit()
         except Exception as e:

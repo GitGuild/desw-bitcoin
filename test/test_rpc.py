@@ -1,15 +1,16 @@
-import bitjws
-import json
-import os
-import pytest
 import time
-from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
-from desw import CFG, ses, eng
-from desw_bitcoin import *
+from ledger import Amount
+
+import bitjws
+from bitcoinrpc.authproxy import AuthServiceProxy
+from desw import CFG
 from sqlalchemy_models import wallet as wm, user as um
 
+from desw_bitcoin import get_new_address, get_balance, send_to_address, validate_address, create_client, CONFS, main,\
+    ses
+
 CURRENCY = 'BTC'
-NETWORK = 'Bitcoin'
+NETWORK = 'bitcoin'
 ADDYFIRSTCHARS = '123mn'
 
 testclient = AuthServiceProxy(CFG.get('test', NETWORK))
@@ -35,7 +36,7 @@ def create_user():
         ses.rollback()
         ses.flush()
     userkey = um.UserKey(key=my_address, keytype='public', user_id=user.id,
-                      last_nonce=0)
+                         last_nonce=0)
     ses.add(userkey)
     ses.add(wm.Balance(total=0, available=0, currency=CURRENCY, reference='open account', user_id=user.id))
     try:
@@ -82,7 +83,7 @@ def test_validate_address():
 
 def test_send_to_address():
     recaddy = testclient.getnewaddress()
-    txid = send_to_address(recaddy, 0.01)
+    txid = send_to_address(recaddy, Amount("0.01 BTC"))
     assert isinstance(txid, str)
     assert len(recaddy) > 10
 
@@ -118,14 +119,14 @@ def test_receive():
             time.sleep(0.1)
     assert c is not None
     assert c.address == address
-    assert c.amount == int(0.01 * 1e8)
+    assert c.amount == Amount("0.0100000 BTC")
     assert c.currency == CURRENCY
     assert c.network == NETWORK
-    assert c.state == 'unconfirmed'
+    assert c.transaction_state == 'unconfirmed'
     assert c.user_id == user.id
     assert txid in c.ref_id
     bal = ses.query(wm.Balance).filter(wm.Balance.user_id == user.id).filter(wm.Balance.currency == CURRENCY).first()
-    assert bal.total == int(0.01 * 1e8)
+    assert bal.total == Amount("0.0100000 BTC")
     assert bal.available == 0
 
 
@@ -152,15 +153,15 @@ def test_receive_already_confirmed():
             time.sleep(0.1)
     assert c is not None
     assert c.address == tx['address']
-    assert c.amount == int(float(tx['amount']) * 1e8)
+    assert c.amount == Amount("%s BTC" % tx['amount'])
     assert c.currency == CURRENCY
     assert c.network == NETWORK
-    assert c.state == 'complete'
+    assert c.transaction_state == 'complete'
     assert c.user_id == user.id
     assert tx['txid'] in c.ref_id
     bal = ses.query(wm.Balance).filter(wm.Balance.user_id == user.id).filter(wm.Balance.currency == CURRENCY).first()
-    assert bal.total == int(float(tx['amount']) * 1e8)
-    assert bal.available == int(float(tx['amount']) * 1e8)
+    assert bal.total == Amount("%s BTC" % tx['amount'])
+    assert bal.available == Amount("%s BTC" % tx['amount'])
 
 
 def test_receive_then_confirm():
@@ -186,37 +187,37 @@ def test_receive_then_confirm():
         else:
             time.sleep(0.1)
     assert c is not None
-    c.state = 'unconfirmed'
+    c.transaction_state = 'unconfirmed'
     ses.add(c)
     ses.commit()
 
     main(['block', ""])
+    c.load_commodities()
     assert c.address == tx['address']
-    assert c.amount == int(float(tx['amount']) * 1e8)
+    assert c.amount == Amount("%s BTC" % tx['amount'])
     assert c.currency == CURRENCY
     assert c.network == NETWORK
-    assert c.state == 'complete'
+    assert c.transaction_state == 'complete'
     assert c.user_id == user.id
     assert tx['txid'] in c.ref_id
     assert len(c.ref_id) > len(tx['txid'])
     bal = ses.query(wm.Balance).filter(wm.Balance.user_id == user.id).filter(wm.Balance.currency == CURRENCY).first()
-    assert bal.total == int(float(tx['amount']) * 1e8)
-    assert bal.available == int(float(tx['amount']) * 1e8)
+    assert bal.total == Amount("%s BTC" % tx['amount'])
+    assert bal.available == Amount("%s BTC" % tx['amount'])
 
 
 def test_get_balance():
     bals = get_balance()
-    print bals
     assert 'total' in bals
     assert 'available' in bals
     assert bals['total'] >= bals['available']
 
     recaddy = testclient.getnewaddress()
-    txid = send_to_address(recaddy, 0.01)
+    txid = send_to_address(recaddy, Amount("0.01 BTC"))
 
     time.sleep(0.25)
 
     bals2 = get_balance()
-    assert bals2['available'] <= bals['available'] - 0.01
-    assert bals2['total'] <= bals['total'] - 0.01
+    assert bals2['available'] <= bals['available'] - Amount("0.01 BTC")
+    assert bals2['total'] <= bals['total'] - Amount("0.01 BTC")
 
