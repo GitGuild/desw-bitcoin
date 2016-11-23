@@ -13,9 +13,7 @@ python install.py
 
 # Configuration
 
-This plugin expects a .ini configuration file. See `example_cfg.ini` for an example. Like other desw plugins, this file can be specified by setting the `DESW_CONFIG_FILE` environmental variable, like so.
-
-`export DESW_CONFIG_FILE="path/to/cfg.ini"`
+This plugin expects a desw.ini configuration file. See `example_cfg.ini` for an example. Like other TAPPs, this file is expected to be in `/etc/tapp` on *nix systems.
 
 The most relevant part for this plugin is the bitcoin configuration, which includes the RPC connection URL, a confirmation requirement, the transaction fee, and supported currencies.
 
@@ -23,7 +21,7 @@ The most relevant part for this plugin is the bitcoin configuration, which inclu
 [bitcoin]
 RPCURL: http://bitcoinrpc:pass@127.0.0.1:8332
 CONFS: 3
-FEE: 10000
+FEE: 0.0001
 CURRENCIES: ["BTC"]
 ```
 
@@ -44,7 +42,7 @@ walletnotify=/usr/bin/python /desw-install-location/desw-bitcoin/desw_bitcoin.py
 blocknotify=/usr/bin/python /desw-install-location/desw-bitcoin/desw_bitcoin.py block %s
 ```
 
-Remember that the bitcoind process also needs to be configured like the rest of desw. Most importantly, `DESW_CONFIG_FILE` needs to be set.
+Remember that the bitcoind process also needs to be configured like the rest of desw. Most importantly, the desw.ini file must be accessible.
 
 # Testing
 
